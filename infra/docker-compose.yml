@@ -1,0 +1,74 @@
+services:
+  postgres:
+    image: postgis/postgis:16-3.4
+    environment:
+      POSTGRES_DB: farm_intelligence
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - '5432:5432'
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+
+  redis:
+    image: redis:7.4-alpine
+    ports:
+      - '6379:6379'
+
+  api:
+    build:
+      context: ../api
+    environment:
+      DATABASE_URL: postgresql+psycopg://postgres:postgres@postgres:5432/farm_intelligence
+      REDIS_URL: redis://redis:6379/0
+      APP_MODE: dev_facing
+      AUTO_CREATE_TABLES: 'true'
+      SEED_DEMO_DATA: 'true'
+      OPENWEATHER_API_KEY: ${OPENWEATHER_API_KEY:-}
+    ports:
+      - '8000:8000'
+    depends_on:
+      - postgres
+      - redis
+
+  worker:
+    build:
+      context: ../api
+    command: celery -A app.workers.celery_app.celery_app worker --loglevel=info
+    environment:
+      DATABASE_URL: postgresql+psycopg://postgres:postgres@postgres:5432/farm_intelligence
+      REDIS_URL: redis://redis:6379/0
+      APP_MODE: dev_facing
+      AUTO_CREATE_TABLES: 'true'
+      SEED_DEMO_DATA: 'false'
+    depends_on:
+      - postgres
+      - redis
+
+  scheduler:
+    build:
+      context: ../api
+    command: celery -A app.workers.celery_app.celery_app beat --loglevel=info
+    environment:
+      DATABASE_URL: postgresql+psycopg://postgres:postgres@postgres:5432/farm_intelligence
+      REDIS_URL: redis://redis:6379/0
+      APP_MODE: dev_facing
+      AUTO_CREATE_TABLES: 'false'
+      SEED_DEMO_DATA: 'false'
+    depends_on:
+      - postgres
+      - redis
+
+  web:
+    build:
+      context: ../web
+    environment:
+      VITE_API_BASE_URL: http://localhost:8000/api/v1
+      VITE_MAPBOX_TOKEN: ${VITE_MAPBOX_TOKEN:-}
+    ports:
+      - '5173:5173'
+    depends_on:
+      - api
+
+volumes:
+  pg_data:
